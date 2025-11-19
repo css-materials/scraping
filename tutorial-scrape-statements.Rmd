@@ -1,0 +1,257 @@
+---
+title: "Scraping Presidential Statements"
+author: Sabrina Nardin
+date: "`r lubridate::today()`"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 4
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,    
+  eval = TRUE,
+  message = FALSE,
+  warning = FALSE
+)
+```
+
+### Scaling Up Our Scraper
+
+So far, we applied a function (see slides) to scrape information from one or two pages (we randomly picked two presidential letters). We learned how to scrape by inspecting the HTML and by using the SelectorGadget.
+
+The url we used so far is under the messages category (with over 12,000 messages). You can find it also here `https://www.presidency.ucsb.edu/documents/app-categories/citations/presidential/messages?field_docs_start_date_time_value%5Bvalue%5D%5Bdate%5D=1958&page=4`
+
+**If we want to scrape all pages (all presidential messages), what steps should we take to do this efficiently?** 
+
+Note if you go `https://www.presidency.ucsb.edu/documents` you see all "Categories" of documents you could scrape. These include: executive orders, fireside chats, letters, messages, statements, etc. 
+For example, there are over 4,000 presidential letters, each with its own unique URL. How can we further automate our scraper so that we do not have to manually pass 4000+ URLs into our previous function each time? 
+
+To tackle this challenge, we first need to plan: explore the website to identify the best page to use as starting point and examine how that page is built. 
+
+### Choosing a Starting Page and Planning our Code
+
+Since we want to collect all letters, the most suitable starting point is the page that provides links to all 4,000+ letters, ordered from the most recent to the earliest (1797):
+`https://www.presidency.ucsb.edu/documents/app-categories/presidential/letters`
+
+Open that page and explore it. You should notice it displays only 10 URLs at that time, but if you turn page, you can get additional 10 URLs, etc. until you access all 4000+ URLs 
+
+So we want our code to:
+
+* Start from the initial page, collect all URLs from it, and store them into a character vector or a list
+* Turn page and collect all URLs from the second page, and continue this process until the last page. Remember there are 4000+ pages, and we should collect links from all of them
+* Finally, your code should apply our `scrape_doc` function (see last lecture slides) to each of all 4000+ URLs we collected, one by one, to get all info from each (name, title, date, full text)
+
+
+### Collecting all URLs From the First Page
+
+Load required libraries
+```{r, message = FALSE}
+library(rvest)
+library(tidyverse)
+```
+
+Initial url
+```{r}
+page_one <- "https://www.presidency.ucsb.edu/documents/app-categories/presidential/letters"
+```
+
+First, read the html content into R:
+```{r}
+page <- read_html(page_one)
+page
+#page |> as.character() |> cat()
+```
+
+Our goal is to collect all urls (links) from this initial page:
+
+- Inspect the HTML of the page and check a few urls (e.g., links) before implementing the code
+- We should note that the links we need are, as expected, under a `a href` tag (`a` is the tag, `href` the attribute), which is nested under a `p` tag, and a `div` tag with `class="field-title"` attribute
+- We try a few different options using `html_elements()` and then use the tag that is most useful here and w You cannot pass directly what you see from the website HTML (e.g., `div class="field-title"`), but you need to pass code in the way `rvest()` wants it
+
+```{r}
+# option 1 = not specific enough
+#html_elements(page, "div")
+
+# option 2 (more precise) = works
+#html_elements(page, "div.field-title")
+
+# option 3 (even more precise, full path) = works
+html_elements(page, "div.field-title p a")
+```
+
+Now we can extract the actual links. From last lecture, we know we can use another `rvest` function `html_attr()`  which retrieves HTML attributes values: here the tag is `a` the attribute is `href` and the actual link is the value
+
+```{r}
+links_page_one <- page %>%
+  html_elements("div.field-title p a") %>%
+  html_attr("href")
+
+#length(links_page_one)
+#links_page_one[1:3]
+#is.vector(links_page_one)
+#is.character(links_page_one)
+```
+
+### Collecting all URLs From the First Page: Relative and Full URLs
+
+The links we got with this code are "relative" URLs, meaning they are incomplete: the lack the "base" part of the URL. If you try to use them directly in your browser, they won't work because the browser won't know the full address to navigate to.
+
+So let's add the "base" part of the URL. You can use the `paste()` function from base R or `paste0()`. They both concatenates character vectors:
+```{r}
+base_url <- "https://www.presidency.ucsb.edu"
+
+# paste
+paste(base_url, links_page_one)
+fl <- paste(base_url, links_page_one, sep = "")
+fl
+
+# paste0
+#full_links <- paste0(base_url, links_page_one)
+
+# check
+#identical(fl, full_links)
+```
+
+Now we have all links from the first page (`https://www.presidency.ucsb.edu/documents/app-categories/presidential/letters`), but we need the links from the other pages. From the website, click on the numbers that allow to turn page and observe how the URL changes. For example...
+
+* this is page 1 (already collected): `https://www.presidency.ucsb.edu/documents/app-categories/presidential/letters`
+* this is page 2: `https://www.presidency.ucsb.edu/documents/app-categories/presidential/letters?page=1`
+* this is page 3: `https://www.presidency.ucsb.edu/documents/app-categories/presidential/letters?page=2`
+* there are several pages, check the "last" one: `https://www.presidency.ucsb.edu/documents/app-categories/presidential/letters?page=476` 
+
+Examine what these URLs to find the part of the URL that stays the same (that's the "base" URL). Then, append the changing parts to automatically generate the full set of page URLs:
+```{r}
+# identify starting page 
+base_url <- "https://www.presidency.ucsb.edu/documents/app-categories/presidential/letters"
+
+# identify how many pages we need to turn
+num_pages <- 476
+
+# initialize empty vector to store all urls to each page
+page_urls <- vector("character", num_pages)
+length(page_urls)
+
+# loop to populate this empty vector
+for (i in 1:num_pages) {
+  page_urls[i] <- paste0(base_url, "?page=", i)
+}
+#page_urls
+page_urls[1:3]
+```
+
+Add at position 1 the page we already collected data from, which is officially our page 1 `https://www.presidency.ucsb.edu/documents/app-categories/presidential/letters`
+```{r}
+# check frist
+page_urls[1:3]
+
+# add and check again
+page_urls <- c(base_url, page_urls)
+page_urls[1:3]
+
+# note this is a simple character vector
+#is.character(page_urls)
+```
+
+### Scraping All Links From All Pages (all links to the letters from each of these 476 urls)
+
+Recall this is the code we have written so far to scrape the links to the letters from the first page:
+```{r}
+page_one <- "https://www.presidency.ucsb.edu/documents/app-categories/presidential/letters"
+
+page_one <- read_html(page_one)
+
+links_page_one <- page_one %>%
+  html_elements("div.field-title p a") %>%
+  html_attr("href")
+
+links_page_one
+```
+
+Put it into a function so we can apply it to each page to scrape their links 
+```{r}
+links_all_pages <- function(p) {
+  Sys.sleep(runif(1, min = 1, max = 3))
+  #Sys.sleep(1)
+  page <- read_html(p)
+  links <- page %>% 
+    html_elements("div.field-title p a") %>%
+    html_attr("href")
+  return(links)
+}
+```
+
+Test it out with the first three pages we stored in the `page_urls` object above. What should we get back? How many results?
+```{r}
+links_all_pages(page_urls[1])
+#links_all_pages("https://www.presidency.ucsb.edu/documents/app-categories/presidential/letters")
+
+links_all_pages(page_urls[2])
+#links_all_pages("https://www.presidency.ucsb.edu/documents/app-categories/presidential/letters?page=2")
+
+links_all_pages(page_urls[3])
+#links_all_pages("https://www.presidency.ucsb.edu/documents/app-categories/presidential/letters?page=2")
+```
+
+Now apply the function to scrape all links to all pages. Do some tests first to ensure we understand the code:
+```{r}
+# test it out first, with print statements
+
+for (i in seq_along(page_urls)) {
+  print(i)
+  print(page_urls[i])
+}
+```
+
+Now run function to collect the links from all pages, BUT FOR CLASS WE DO NOT RUN THIS FOR ALL 476 PAGES! 
+```{r}
+# now run function to collect the links
+# BUT we limit it to a few pages for class demo!
+
+for (i in seq_along(page_urls[1:3])) {
+  print(links_all_pages(page_urls[i]))
+}
+```
+
+And store the output (all extracted links):
+```{r}
+# now store output 
+selection <- page_urls[1:2]
+all_urls <- vector("character", length(selection) * 10) 
+length(all_urls)
+
+# counter
+url_index <- 1
+
+# outer loop: iterates through the selected URLs only
+for (i in seq_along(selection)) {
+  
+  # get the links from the current page
+  page_links <- links_all_pages(selection[i])
+  #print(page_links)
+  
+  # inner loop: loop through each link on the page and stores them
+  for (link in page_links) {
+    # append each link to the all_urls vector
+    all_urls[url_index] <- link
+    url_index <- url_index + 1  # move to the next index
+  }
+}
+
+all_urls
+```
+
+### Next Step: Scraping the Actual Document Data!
+
+1. Now scrape the actual data (name, date, title, full text) from all urls! To do that take the function `scrape_doc` from last lecture, and apply it / adjust it if needed
+```{r}
+
+```
+
+2. Add error-handling statements to your code to manage potential issues you might encounter while scraping. This is because our code will be be sending over 4000+ requests for data (one per page), and there are changes that some of these requests might fail. The most common issue is a page denying your data request, resulting in a "404 error." To tackle this challenge, you need to write code that uses conditional statements to send a request to the webpage you want to scrape; if denied, the code should raise an error message.
+```{r}
+
+```
+
+
