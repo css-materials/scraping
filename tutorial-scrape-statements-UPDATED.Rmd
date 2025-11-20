@@ -21,13 +21,11 @@ knitr::opts_chunk$set(
 
 So far, we applied a function (see slides) to scrape information from one or two pages: we randomly picked a few presidential **messages**. We learned how to scrape by inspecting the HTML and by using the SelectorGadget. The URL we used so far is under the messages category (with over 12,000 messages), for example: `https://www.presidency.ucsb.edu/documents/app-categories/citations/presidential/messages?field_docs_start_date_time_value%5Bvalue%5D%5Bdate%5D=1958&page=4`
 
-In this tutorial, we switch from messages to **letters**, but the logic is exactly the same. We have over 4,000  presidential letters on that online archive. 
+In this tutorial, we switch from messages to **letters**, but the logic is exactly the same. 
 
 **If we want to scrape all pages (all presidential letters), what steps should we take to do this efficiently?** 
 
-Note if you go to `https://www.presidency.ucsb.edu/documents` you see all "Categories" of documents you could scrape (executive orders, fireside chats, letters, messages, statements, etc.).  
-
-For example, there are over 4,000 presidential letters, each with its own unique URL. How can we further automate our scraper so that we do not have to manually pass 4000+ URLs into our previous function each time? 
+Note if you go to `https://www.presidency.ucsb.edu/documents` you see all "Categories" of documents you could scrape (executive orders, fireside chats, letters, messages, statements, etc.).  For example, there are over 4,000 presidential letters, each with its own unique URL. How can we further automate our scraper so that we do not have to manually pass 4000+ URLs into our previous function each time? 
 
 To tackle this challenge, we first need to plan: explore the website to identify the best page to use as a starting point and examine how that page is built. 
 
@@ -170,7 +168,7 @@ So `page_urls` is a character vector containing all listing pages for the presid
 ### Scraping Letter Links From All Listing Pages
 
 Recall this is the code we have written so far to scrape the links to the letters from the first page:
-```{r}
+```r
 letters_page1_html <- read_html(letters_page1_url)
 
 letter_links_rel_page1 <- letters_page1_html %>%
@@ -183,7 +181,8 @@ letter_links_full_page1[1:3]
 
 Now we put this logic into a function so we can apply it to each listing page to scrape letter links:
 ```{r}
-links_all_pages <- function(page_url) {
+links_all_pages <- function(page_url, domain_url) {
+  
   # be polite: pause 1–3 seconds between requests
   Sys.sleep(runif(1, min = 1, max = 3))
 
@@ -204,13 +203,15 @@ links_all_pages <- function(page_url) {
 
 Test this function out with the first couple of pages stored in `page_urls`.  What should we get back? How many results per page?
 ```{r}
+domain_url <- "https://www.presidency.ucsb.edu"
+
 # test on first listing page (page 1)
-test_links_1 <- links_all_pages(page_urls[1])
+test_links_1 <- links_all_pages(page_urls[1], domain_url)
 length(test_links_1)
 head(test_links_1, 3)
 
 # test on second listing page (page 2)
-test_links_2 <- links_all_pages(page_urls[2])
+test_links_2 <- links_all_pages(page_urls[2], domain_url)
 length(test_links_2)
 head(test_links_2, 3)
 
@@ -240,7 +241,7 @@ url_index <- 1
 
 # outer loop: iterates through selected pages
 for (i in seq_along(selected_pages)) {
-  page_links <- links_all_pages(selected_pages[i])
+  page_links <- links_all_pages(selected_pages[i], domain_url)
   
   # inner loop: loop through each URL
   for (link in page_links) {
